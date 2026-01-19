@@ -32,8 +32,22 @@ import {
     Power,
     Loader2,
     AlertCircle,
+    CheckCircle2,
+    HelpCircle,
+    Copy,
+    ChevronDown,
+    ChevronUp,
     X,
+    Play,
+    FileText,
+    Monitor,
+    BarChart2,
+    Mail,
+    Calendar,
+    ArrowRight,
+    Search
 } from 'lucide-react';
+import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from '@/lib/utils';
 import {
     DndContext,
@@ -117,7 +131,7 @@ function SortableSection({ section, index, onAddLesson, onEdit, onDelete, childr
     );
 }
 
-function SortableLesson({ lesson, index, onEdit, onDelete }: any) {
+function SortableLesson({ lesson, index, onEdit, onDelete, onViewResults }: { lesson: any, index: number, onEdit: (lesson: any) => void, onDelete: (id: string) => void, onViewResults: (lesson: any) => void }) {
     const {
         attributes,
         listeners,
@@ -152,10 +166,35 @@ function SortableLesson({ lesson, index, onEdit, onDelete }: any) {
                     {lesson.description && (
                         <p className="text-sm text-muted-foreground">{lesson.description}</p>
                     )}
-                    <div className="flex items-center gap-3 text-sm text-muted-foreground mt-1">
-                        <span>{lesson.video_duration_minutes} min</span>
+                    <div className="flex items-center gap-3 text-[10px] uppercase font-black tracking-widest mt-1.5">
+                        {lesson.lesson_type === 'video' ? (
+                            <div className="flex items-center gap-1.5 text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md">
+                                <Play className="w-3 h-3" />
+                                <span>{lesson.video_duration_minutes || 0} min</span>
+                            </div>
+                        ) : lesson.lesson_type === 'text' ? (
+                            <div className="flex items-center gap-1.5 text-orange-600 bg-orange-50 px-2 py-0.5 rounded-md">
+                                <FileText className="w-3 h-3" />
+                                <span>Read</span>
+                            </div>
+                        ) : lesson.lesson_type === 'quiz' ? (
+                            <div className="flex items-center gap-1.5 text-purple-600 bg-purple-50 px-2 py-0.5 rounded-md">
+                                <HelpCircle className="w-3 h-3" />
+                                <span>Quiz</span>
+                            </div>
+                        ) : lesson.lesson_type === 'final_exam' ? (
+                            <div className="flex items-center gap-1.5 text-red-600 bg-red-50 px-2 py-0.5 rounded-md">
+                                <Monitor className="w-3 h-3" />
+                                <span>Final Exam</span>
+                            </div>
+                        ) : (
+                            <div className="flex items-center gap-1.5 text-gray-600 bg-gray-50 px-2 py-0.5 rounded-md">
+                                <FileText className="w-3 h-3" />
+                                <span>Other</span>
+                            </div>
+                        )}
                         {lesson.is_preview && (
-                            <span className="px-2 py-0.5 rounded bg-primary/10 text-primary text-xs">
+                            <span className="px-2 py-0.5 rounded bg-green-50 text-green-700">
                                 Preview
                             </span>
                         )}
@@ -164,6 +203,17 @@ function SortableLesson({ lesson, index, onEdit, onDelete }: any) {
             </div>
 
             <div className="flex items-center gap-2">
+                {lesson.lesson_type === 'quiz' && (
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => onViewResults(lesson)}
+                        className="rounded-xl h-8 border-purple-200 text-purple-600 hover:bg-purple-50 hover:text-purple-700 font-bold text-xs"
+                    >
+                        <BarChart2 className="w-3.5 h-3.5 mr-1.5" />
+                        Results
+                    </Button>
+                )}
                 <Button variant="ghost" size="sm" onClick={() => onEdit(lesson)}>
                     <Edit className="w-4 h-4" />
                 </Button>
@@ -193,6 +243,10 @@ export default function CourseEditor({ courseId, rolePrefix }: { courseId: strin
     const [editingLesson, setEditingLesson] = useState<any>(null);
     const [currentSection, setCurrentSection] = useState<any>(null);
     const [hasInitialized, setHasInitialized] = useState(false);
+    const [showTypeSelectionModal, setShowTypeSelectionModal] = useState(false);
+    const [uploadProgress, setUploadProgress] = useState(0);
+    const [showResultsModal, setShowResultsModal] = useState(false);
+    const [resultsLesson, setResultsLesson] = useState<any>(null);
 
 
 
@@ -246,6 +300,9 @@ export default function CourseEditor({ courseId, rolePrefix }: { courseId: strin
         video: null as File | null,
         lessonType: 'video',
         content: '',
+        externalUrl: '',
+        passingScore: 70,
+        questions: [] as any[],
     });
 
     const sensors = useSensors(
@@ -268,6 +325,10 @@ export default function CourseEditor({ courseId, rolePrefix }: { courseId: strin
             setShowSectionModal(false);
             setSectionForm({ title: '', description: '' });
         },
+        onError: (error: any) => {
+            const msg = error.response?.data?.errors?.[0]?.message || error.response?.data?.message || 'Failed to add section';
+            toast.error(msg);
+        }
     });
 
     const updateSection = useMutation({
@@ -282,6 +343,10 @@ export default function CourseEditor({ courseId, rolePrefix }: { courseId: strin
             setEditingSection(null);
             setSectionForm({ title: '', description: '' });
         },
+        onError: (error: any) => {
+            const msg = error.response?.data?.errors?.[0]?.message || error.response?.data?.message || 'Failed to update section';
+            toast.error(msg);
+        }
     });
 
     const deleteSection = useMutation({
@@ -301,29 +366,83 @@ export default function CourseEditor({ courseId, rolePrefix }: { courseId: strin
             });
             return response.data;
         },
-        onSuccess: () => {
+        onSuccess: (res) => {
             queryClient.invalidateQueries({ queryKey: ['course', courseId] });
             toast.success('Lesson added successfully');
-            setShowLessonModal(false);
-            setCurrentSection(null);
-            setLessonForm({ title: '', description: '', durationMinutes: 0, isPreview: false, video: null, lessonType: 'video', content: '' });
+
+            if (lessonForm.lessonType === 'quiz') {
+                saveQuizMutation.mutate({
+                    lessonId: res.data.lesson.id,
+                    data: {
+                        passing_score: lessonForm.passingScore,
+                        questions: lessonForm.questions
+                    }
+                });
+            } else {
+                setShowLessonModal(false);
+                setCurrentSection(null);
+                setUploadProgress(0);
+                setLessonForm({ title: '', description: '', durationMinutes: 0, isPreview: false, video: null, lessonType: 'video', content: '', externalUrl: '', passingScore: 70, questions: [] });
+            }
         },
+        onError: (error: any) => {
+            const msg = error.response?.data?.errors?.[0]?.message || error.response?.data?.message || 'Failed to add lesson';
+            toast.error(msg);
+        }
     });
 
     const updateLesson = useMutation({
         mutationFn: async ({ id, data }: { id: string; data: FormData }) => {
             const response = await apiClient.put(`/instructor/lessons/${id}`, data, {
                 headers: { 'Content-Type': 'multipart/form-data' },
+                onUploadProgress: (progressEvent) => {
+                    const percentCompleted = Math.round((progressEvent.loaded * 100) / (progressEvent.total || 1));
+                    setUploadProgress(percentCompleted);
+                }
             });
             return response.data;
         },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['course', courseId] });
             toast.success('Lesson updated successfully');
+
+            // If it's a quiz, save the quiz questions separately
+            if (lessonForm.lessonType === 'quiz') {
+                saveQuizMutation.mutate({
+                    lessonId: editingLesson.id,
+                    data: {
+                        passing_score: lessonForm.passingScore,
+                        questions: lessonForm.questions
+                    }
+                });
+            } else {
+                setShowLessonModal(false);
+                setEditingLesson(null);
+                setUploadProgress(0);
+                setLessonForm({ title: '', description: '', durationMinutes: 0, isPreview: false, video: null, lessonType: 'video', content: '', externalUrl: '', passingScore: 70, questions: [] });
+            }
+        },
+        onError: (error: any) => {
+            const msg = error.response?.data?.errors?.[0]?.message || error.response?.data?.message || 'Failed to update lesson';
+            toast.error(msg);
+        }
+    });
+
+    const saveQuizMutation = useMutation({
+        mutationFn: async ({ lessonId, data }: { lessonId: string; data: any }) => {
+            const response = await apiClient.post(`/instructor/lesson/${lessonId}/quiz`, data);
+            return response.data;
+        },
+        onSuccess: () => {
+            toast.success('Quiz content saved');
             setShowLessonModal(false);
             setEditingLesson(null);
-            setLessonForm({ title: '', description: '', durationMinutes: 0, isPreview: false, video: null, lessonType: 'video', content: '' });
+            setLessonForm({ title: '', description: '', durationMinutes: 0, isPreview: false, video: null, lessonType: 'video', content: '', externalUrl: '', passingScore: 70, questions: [] });
         },
+        onError: (error: any) => {
+            const msg = error.response?.data?.errors?.[0]?.message || error.response?.data?.message || 'Failed to save quiz';
+            toast.error(msg);
+        }
     });
 
     const deleteLesson = useMutation({
@@ -334,6 +453,19 @@ export default function CourseEditor({ courseId, rolePrefix }: { courseId: strin
             queryClient.invalidateQueries({ queryKey: ['course', courseId] });
             toast.success('Lesson deleted successfully');
         },
+    });
+
+    const deleteCourseMutation = useMutation({
+        mutationFn: async () => {
+            await apiClient.delete(`/instructor/courses/${courseId}`);
+        },
+        onSuccess: () => {
+            toast.success('Course deleted successfully');
+            router.push(`/${rolePrefix}/dashboard`);
+        },
+        onError: (error: any) => {
+            toast.error(error.response?.data?.message || 'Failed to delete course');
+        }
     });
 
     const reorderSections = useMutation({
@@ -384,8 +516,8 @@ export default function CourseEditor({ courseId, rolePrefix }: { courseId: strin
         formData.append('durationMinutes', lessonForm.durationMinutes.toString());
         formData.append('isPreview', lessonForm.isPreview.toString());
         formData.append('lessonType', lessonForm.lessonType);
-        formData.append('content', lessonForm.content);
-
+        if (lessonForm.content) formData.append('content', lessonForm.content);
+        if (lessonForm.externalUrl) formData.append('external_url', lessonForm.externalUrl);
         if (lessonForm.video) {
             formData.append('video', lessonForm.video);
         }
@@ -446,12 +578,9 @@ export default function CourseEditor({ courseId, rolePrefix }: { courseId: strin
     };
 
     if (isLoading) {
-        return (
-            <div className="p-20 flex items-center justify-center">
-                <Loader2 className="w-12 h-12 animate-spin text-primary" />
-            </div>
-        );
+        return <CourseEditorSkeleton />;
     }
+
 
     // --- Ownership Check ---
     if (user && user.role === 'instructor' && course && course.instructor_id !== user.id) {
@@ -583,8 +712,8 @@ export default function CourseEditor({ courseId, rolePrefix }: { courseId: strin
                                                 onAddLesson={(s: any) => {
                                                     setCurrentSection(s);
                                                     setEditingLesson(null);
-                                                    setLessonForm({ title: '', description: '', durationMinutes: 0, isPreview: false, video: null, lessonType: 'video', content: '' });
-                                                    setShowLessonModal(true);
+                                                    setLessonForm({ title: '', description: '', durationMinutes: 0, isPreview: false, video: null, lessonType: 'video', content: '', externalUrl: '', passingScore: 70, questions: [] });
+                                                    setShowTypeSelectionModal(true);
                                                 }}
                                                 onEdit={(s: any) => {
                                                     setEditingSection(s);
@@ -610,6 +739,10 @@ export default function CourseEditor({ courseId, rolePrefix }: { courseId: strin
                                                                         key={lesson.id}
                                                                         lesson={lesson}
                                                                         index={lessonIndex}
+                                                                        onViewResults={(l: any) => {
+                                                                            setResultsLesson(l);
+                                                                            setShowResultsModal(true);
+                                                                        }}
                                                                         onEdit={(l: any) => {
                                                                             setEditingLesson(l);
                                                                             setLessonForm({
@@ -620,7 +753,24 @@ export default function CourseEditor({ courseId, rolePrefix }: { courseId: strin
                                                                                 video: null,
                                                                                 lessonType: l.lesson_type || 'video',
                                                                                 content: l.content || '',
+                                                                                externalUrl: l.external_url || '',
+                                                                                passingScore: l.quiz?.passing_score || 70,
+                                                                                questions: l.quiz?.questions || [],
                                                                             });
+
+                                                                            // Fetch full quiz data if it's a quiz
+                                                                            if (l.lesson_type === 'quiz') {
+                                                                                apiClient.get(`/instructor/lesson/${l.id}/quiz`).then(res => {
+                                                                                    if (res.data.success) {
+                                                                                        setLessonForm(prev => ({
+                                                                                            ...prev,
+                                                                                            passingScore: res.data.data.passing_score,
+                                                                                            questions: res.data.data.questions
+                                                                                        }));
+                                                                                    }
+                                                                                });
+                                                                            }
+
                                                                             setShowLessonModal(true);
                                                                         }}
                                                                         onDelete={(id: string) => {
@@ -872,8 +1022,33 @@ export default function CourseEditor({ courseId, rolePrefix }: { courseId: strin
                                     }}
                                     loading={updateCourseMutation.isPending}
                                 >
-                                    <Save className="w-5 h-5" /> Commit Changes
+                                    <Save className="w-5 h-5" /> Save Changes
                                 </Button>
+
+                                <div className="pt-10 border-t">
+                                    <div className="bg-red-50 border-2 border-red-100 rounded-3xl p-6 space-y-4">
+                                        <div>
+                                            <h4 className="text-red-900 font-black flex items-center gap-2">
+                                                <AlertCircle className="w-5 h-5" /> Danger Zone
+                                            </h4>
+                                            <p className="text-red-700 text-xs mt-1 font-medium">
+                                                Deleting this course is permanent. All sections, lessons, and media will be erased from the universe.
+                                            </p>
+                                        </div>
+                                        <Button
+                                            variant="destructive"
+                                            className="w-full h-12 rounded-2xl font-bold shadow-lg shadow-red-200"
+                                            onClick={() => {
+                                                if (confirm('CRITICAL ACTION: Are you sure you want to delete this course? This cannot be undone.')) {
+                                                    deleteCourseMutation.mutate();
+                                                }
+                                            }}
+                                            loading={deleteCourseMutation.isPending}
+                                        >
+                                            <Trash2 className="w-4 h-4 mr-2" /> Delete This Course
+                                        </Button>
+                                    </div>
+                                </div>
                             </CardContent>
                         </Card>
                     </div>
@@ -906,19 +1081,56 @@ export default function CourseEditor({ courseId, rolePrefix }: { courseId: strin
 
                         <div className="flex justify-end gap-3 pt-6">
                             <Button variant="outline" onClick={() => setShowSectionModal(false)} className="rounded-xl font-bold">
-                                Abort
+                                Cancel
                             </Button>
                             <Button
                                 onClick={handleSectionSubmit}
                                 loading={addSection.isPending || updateSection.isPending}
                                 className="rounded-xl font-bold px-8 shadow-lg shadow-primary/10"
                             >
-                                {editingSection ? 'Push Update' : 'Initialize Section'}
+                                {editingSection ? 'Save Changes' : 'Create Section'}
                             </Button>
                         </div>
                     </div>
                 </DialogContent>
             </Dialog>
+
+            {/* Lesson Type Selection Modal */}
+            <Dialog open={showTypeSelectionModal} onOpenChange={setShowTypeSelectionModal}>
+                <DialogContent className="max-w-2xl rounded-3xl border-none shadow-2xl p-8">
+                    <DialogHeader className="mb-8">
+                        <DialogTitle className="text-2xl font-black text-center">What are we building today?</DialogTitle>
+                    </DialogHeader>
+
+                    <div className="grid grid-cols-2 gap-4">
+                        {[
+                            { id: 'video', icon: Play, label: 'Video Lesson', desc: 'Optimal for visual learning and tutorials.', color: 'text-blue-600', bg: 'bg-blue-50' },
+                            { id: 'text', icon: FileText, label: 'Text Lesson', desc: 'Markdown supported rich text documentation.', color: 'text-orange-600', bg: 'bg-orange-50' },
+                            { id: 'quiz', icon: HelpCircle, label: 'Interactive Quiz', desc: 'Knowledge checks with multiple choice.', color: 'text-purple-600', bg: 'bg-purple-50' },
+                            { id: 'final_exam', icon: Monitor, label: 'Final Exam', desc: 'External link to certification systems.', color: 'text-red-600', bg: 'bg-red-50' },
+                        ].map((type) => (
+                            <button
+                                key={type.id}
+                                onClick={() => {
+                                    setLessonForm({ ...lessonForm, lessonType: type.id as any });
+                                    setShowTypeSelectionModal(false);
+                                    setShowLessonModal(true);
+                                }}
+                                className="group flex flex-col items-center p-6 rounded-3xl border-2 border-transparent hover:border-primary/20 hover:bg-muted/30 transition-all text-center space-y-3"
+                            >
+                                <div className={cn("w-16 h-16 rounded-2xl flex items-center justify-center transition-transform group-hover:scale-110", type.bg)}>
+                                    <type.icon className={cn("w-8 h-8", type.color)} />
+                                </div>
+                                <div className="space-y-1">
+                                    <h3 className="font-bold text-lg">{type.label}</h3>
+                                    <p className="text-xs text-muted-foreground leading-relaxed">{type.desc}</p>
+                                </div>
+                            </button>
+                        ))}
+                    </div>
+                </DialogContent>
+            </Dialog>
+
 
             {/* Lesson Modal */}
             <Dialog open={showLessonModal} onOpenChange={setShowLessonModal}>
@@ -945,32 +1157,39 @@ export default function CourseEditor({ courseId, rolePrefix }: { courseId: strin
                                 className="rounded-xl"
                             />
 
-                            {/* Lesson Type Toggle */}
-                            <div className="flex gap-2 p-1 bg-muted rounded-2xl">
-                                <button
-                                    type="button"
-                                    onClick={() => setLessonForm({ ...lessonForm, lessonType: 'video' })}
-                                    className={cn(
-                                        "flex-1 py-3 px-4 rounded-xl text-sm font-black uppercase tracking-wider transition-all",
-                                        lessonForm.lessonType === 'video'
-                                            ? "bg-white text-primary shadow-sm"
-                                            : "text-muted-foreground hover:text-foreground"
-                                    )}
-                                >
-                                    Video Lesson
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => setLessonForm({ ...lessonForm, lessonType: 'text' })}
-                                    className={cn(
-                                        "flex-1 py-3 px-4 rounded-xl text-sm font-black uppercase tracking-wider transition-all",
-                                        lessonForm.lessonType === 'text'
-                                            ? "bg-white text-primary shadow-sm"
-                                            : "text-muted-foreground hover:text-foreground"
-                                    )}
-                                >
-                                    Text Lesson
-                                </button>
+                            {/* Type Specific Header */}
+                            <div className="flex items-center justify-between p-4 bg-muted/40 rounded-2xl border-2 border-dashed border-muted-foreground/10">
+                                <div className="flex items-center gap-3">
+                                    <div className={cn(
+                                        "p-2 rounded-xl",
+                                        lessonForm.lessonType === 'video' ? "bg-blue-100 text-blue-600" :
+                                            lessonForm.lessonType === 'text' ? "bg-orange-100 text-orange-600" :
+                                                lessonForm.lessonType === 'quiz' ? "bg-purple-100 text-purple-600" :
+                                                    "bg-red-100 text-red-600"
+                                    )}>
+                                        {lessonForm.lessonType === 'video' ? <Play className="w-5 h-5" /> :
+                                            lessonForm.lessonType === 'text' ? <FileText className="w-5 h-5" /> :
+                                                lessonForm.lessonType === 'quiz' ? <HelpCircle className="w-5 h-5" /> :
+                                                    <Monitor className="w-5 h-5" />}
+                                    </div>
+                                    <div>
+                                        <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Building</p>
+                                        <p className="font-bold capitalize">{lessonForm.lessonType.replace('_', ' ')} Lesson</p>
+                                    </div>
+                                </div>
+                                {!editingLesson && (
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => {
+                                            setShowLessonModal(false);
+                                            setShowTypeSelectionModal(true);
+                                        }}
+                                        className="rounded-lg text-xs font-bold gap-2"
+                                    >
+                                        Change Type
+                                    </Button>
+                                )}
                             </div>
 
                             {lessonForm.lessonType === 'video' ? (
@@ -1025,7 +1244,7 @@ export default function CourseEditor({ courseId, rolePrefix }: { courseId: strin
                                         </div>
                                     </div>
                                 </div>
-                            ) : (
+                            ) : lessonForm.lessonType === 'text' ? (
                                 <div className="pt-4">
                                     <Textarea
                                         label="Lesson Content (Markdown Supported)"
@@ -1036,24 +1255,334 @@ export default function CourseEditor({ courseId, rolePrefix }: { courseId: strin
                                         className="rounded-3xl"
                                     />
                                 </div>
+                            ) : lessonForm.lessonType === 'final_exam' ? (
+                                <div className="pt-4 space-y-4">
+                                    <Input
+                                        label="External Exam URL"
+                                        placeholder="https://exam-platform.com/..."
+                                        value={lessonForm.externalUrl}
+                                        onChange={(e) => setLessonForm({ ...lessonForm, externalUrl: e.target.value })}
+                                        className="h-12 rounded-xl"
+                                    />
+                                    <p className="text-xs text-muted-foreground">
+                                        Students will be redirected to this URL to take the final exam.
+                                    </p>
+                                </div>
+                            ) : (
+                                <div className="pt-4 space-y-6">
+                                    <div className="flex items-center justify-between">
+                                        <h4 className="font-bold text-sm">Quiz Questions</h4>
+                                        <div className="flex items-center gap-4">
+                                            <span className="text-xs text-muted-foreground">Passing Score (%):</span>
+                                            <Input
+                                                type="number"
+                                                min="0"
+                                                max="100"
+                                                value={lessonForm.passingScore}
+                                                onChange={(e) => setLessonForm({ ...lessonForm, passingScore: parseInt(e.target.value) || 0 })}
+                                                className="w-20 h-8 rounded-lg text-center"
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div className="space-y-4">
+                                        {lessonForm.questions.map((q: any, qIndex: number) => (
+                                            <Card key={qIndex} className="p-4 border-2 rounded-2xl relative group">
+                                                <Button
+                                                    variant="ghost"
+                                                    size="icon"
+                                                    onClick={() => {
+                                                        const updated = lessonForm.questions.filter((_, i) => i !== qIndex);
+                                                        setLessonForm({ ...lessonForm, questions: updated });
+                                                    }}
+                                                    className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity"
+                                                >
+                                                    <X className="w-4 h-4 text-red-500" />
+                                                </Button>
+
+                                                <div className="space-y-4">
+                                                    <Input
+                                                        placeholder={`Question ${qIndex + 1}`}
+                                                        value={q.question_text}
+                                                        onChange={(e) => {
+                                                            const updated = [...lessonForm.questions];
+                                                            updated[qIndex].question_text = e.target.value;
+                                                            setLessonForm({ ...lessonForm, questions: updated });
+                                                        }}
+                                                        className="font-bold border-none bg-muted/30 focus-visible:ring-0"
+                                                    />
+
+                                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                                        {q.options.map((opt: any, optIndex: number) => (
+                                                            <div key={optIndex} className="flex items-center gap-2 group/opt">
+                                                                <input
+                                                                    type="radio"
+                                                                    name={`correct-${qIndex}`}
+                                                                    checked={opt.is_correct}
+                                                                    onChange={() => {
+                                                                        const updated = [...lessonForm.questions];
+                                                                        updated[qIndex].options = updated[qIndex].options.map((o: any, idx: number) => ({
+                                                                            ...o,
+                                                                            is_correct: idx === optIndex
+                                                                        }));
+                                                                        setLessonForm({ ...lessonForm, questions: updated });
+                                                                    }}
+                                                                    className="w-4 h-4 accent-primary"
+                                                                />
+                                                                <Input
+                                                                    placeholder={`Option ${optIndex + 1}`}
+                                                                    value={opt.option_text}
+                                                                    onChange={(e) => {
+                                                                        const updated = [...lessonForm.questions];
+                                                                        updated[qIndex].options[optIndex].option_text = e.target.value;
+                                                                        setLessonForm({ ...lessonForm, questions: updated });
+                                                                    }}
+                                                                    className="h-9 rounded-lg"
+                                                                />
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            </Card>
+                                        ))}
+
+                                        <Button
+                                            variant="outline"
+                                            className="w-full h-12 rounded-xl border-dashed gap-2"
+                                            onClick={() => {
+                                                const newQuestion = {
+                                                    question_text: '',
+                                                    question_type: 'multiple_choice',
+                                                    options: [
+                                                        { option_text: '', is_correct: true },
+                                                        { option_text: '', is_correct: false },
+                                                        { option_text: '', is_correct: false },
+                                                        { option_text: '', is_correct: false },
+                                                    ]
+                                                };
+                                                setLessonForm({ ...lessonForm, questions: [...lessonForm.questions, newQuestion] });
+                                            }}
+                                        >
+                                            <Plus className="w-4 h-4" /> Add Question
+                                        </Button>
+                                    </div>
+                                </div>
                             )}
                         </div>
 
-                        <div className="p-6 border-t bg-muted/20 flex justify-end gap-3 shrink-0">
-                            <Button variant="outline" onClick={() => setShowLessonModal(false)} className="rounded-xl font-bold">
-                                Cancel
-                            </Button>
-                            <Button
-                                onClick={handleLessonSubmit}
-                                loading={addLesson.isPending || updateLesson.isPending}
-                                className="rounded-xl font-bold px-8 shadow-lg shadow-primary/10"
-                            >
-                                {editingLesson ? 'Update Lesson' : 'Add Lesson'}
-                            </Button>
+                        <div className="p-6 border-t bg-muted/20">
+                            {uploadProgress > 0 && (
+                                <div className="space-y-2 mb-4">
+                                    <div className="flex justify-between text-xs font-bold text-primary">
+                                        <span>Uploading...</span>
+                                        <span>{uploadProgress}%</span>
+                                    </div>
+                                    <div className="h-2 w-full bg-muted rounded-full overflow-hidden">
+                                        <div
+                                            className="h-full bg-primary transition-all duration-300"
+                                            style={{ width: `${uploadProgress}%` }}
+                                        />
+                                    </div>
+                                </div>
+                            )}
+                            <div className="flex justify-end gap-3">
+                                <Button variant="outline" onClick={() => setShowLessonModal(false)} className="rounded-xl font-bold">
+                                    Cancel
+                                </Button>
+                                <Button
+                                    onClick={handleLessonSubmit}
+                                    loading={addLesson.isPending || updateLesson.isPending}
+                                    className="rounded-xl font-bold px-8 shadow-lg shadow-primary/10"
+                                >
+                                    {editingLesson ? 'Update Lesson' : 'Add Lesson'}
+                                </Button>
+                            </div>
                         </div>
                     </div>
                 </DialogContent>
             </Dialog>
+
+            <QuizResultsModal
+                lesson={resultsLesson}
+                isOpen={showResultsModal}
+                onClose={() => setShowResultsModal(false)}
+                rolePrefix={rolePrefix}
+            />
         </div >
     );
 }
+
+function QuizResultsModal({ lesson, isOpen, onClose, rolePrefix }: { lesson: any, isOpen: boolean, onClose: () => void, rolePrefix: string }) {
+    const [results, setResults] = useState<any>(null);
+    const [loading, setLoading] = useState(true);
+    const [searchTerm, setSearchTerm] = useState('');
+
+    useEffect(() => {
+        if (isOpen && lesson) {
+            const fetchResults = async () => {
+                setLoading(true);
+                try {
+                    const res = await apiClient.get(`/${rolePrefix}/lesson/${lesson.id}/quiz/results`);
+                    setResults(res.data.data);
+                } catch (err) {
+                    toast.error('Failed to load results');
+                } finally {
+                    setLoading(false);
+                }
+            };
+            fetchResults();
+        }
+    }, [isOpen, lesson, rolePrefix]);
+
+    const filteredAttempts = results?.attempts?.filter((a: any) =>
+        a.student.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        a.student.email.toLowerCase().includes(searchTerm.toLowerCase())
+    ) || [];
+
+    return (
+        <Dialog open={isOpen} onOpenChange={onClose}>
+            <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden flex flex-col p-0 rounded-[2rem] border-none shadow-2xl">
+                <DialogHeader className="p-8 bg-indigo-600 text-white flex-shrink-0 relative overflow-hidden">
+                    <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full -mr-20 -mt-20 blur-3xl" />
+                    <div className="flex items-center gap-4 relative z-10">
+                        <div className="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center backdrop-blur-md">
+                            <BarChart2 className="w-6 h-6 text-white" />
+                        </div>
+                        <div>
+                            <DialogTitle className="text-2xl font-black text-white">{lesson?.title}</DialogTitle>
+                            <p className="text-white/70 text-sm font-medium">Performance tracking and student outcomes</p>
+                        </div>
+                    </div>
+                </DialogHeader>
+
+                <div className="flex-1 overflow-hidden flex flex-col bg-slate-50">
+                    <div className="p-6 bg-white border-b flex items-center justify-between gap-4 flex-shrink-0">
+                        <div className="relative flex-1">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                            <Input
+                                placeholder="Search by student name or email..."
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                                className="pl-10 h-11 rounded-xl border-slate-100 bg-slate-50/50"
+                            />
+                        </div>
+                        <div className="flex items-center gap-6 px-4 py-2 bg-slate-50 rounded-xl border border-slate-100">
+                            <div className="flex flex-col">
+                                <span className="text-[10px] uppercase font-black text-muted-foreground tracking-widest leading-none mb-1">Pass Mark</span>
+                                <span className="text-sm font-bold">{results?.quiz?.passingScore}%</span>
+                            </div>
+                            <div className="w-px h-6 bg-slate-200" />
+                            <div className="flex flex-col">
+                                <span className="text-[10px] uppercase font-black text-muted-foreground tracking-widest leading-none mb-1">Total Attempts</span>
+                                <span className="text-sm font-bold">{results?.attempts?.length || 0}</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="flex-1 overflow-y-auto p-6 custom-scrollbar">
+                        {loading ? (
+                            <div className="h-64 flex items-center justify-center">
+                                <Loader2 className="w-8 h-8 animate-spin text-indigo-600" />
+                            </div>
+                        ) : filteredAttempts.length > 0 ? (
+                            <div className="grid gap-3">
+                                {filteredAttempts.map((attempt: any) => (
+                                    <div key={attempt.id} className="bg-white p-4 rounded-2xl border border-slate-100 flex items-center justify-between group hover:border-indigo-200 transition-all shadow-sm">
+                                        <div className="flex items-center gap-4">
+                                            <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 font-bold uppercase">
+                                                {attempt.student.name.charAt(0)}
+                                            </div>
+                                            <div>
+                                                <div className="font-bold text-slate-900">{attempt.student.name}</div>
+                                                <div className="text-xs text-muted-foreground">{attempt.student.email}</div>
+                                            </div>
+                                        </div>
+
+                                        <div className="flex items-center gap-8">
+                                            <div className="text-right">
+                                                <div className="text-[10px] uppercase font-black text-muted-foreground tracking-widest mb-0.5">Submitted</div>
+                                                <div className="text-xs font-bold text-slate-600">
+                                                    {new Date(attempt.submittedAt).toLocaleDateString()}
+                                                </div>
+                                            </div>
+
+                                            <div className="w-32 text-center">
+                                                <div className={cn(
+                                                    "px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest",
+                                                    attempt.passed ? "bg-green-50 text-green-600 border border-green-100" : "bg-red-50 text-red-600 border border-red-100"
+                                                )}>
+                                                    {attempt.score.toFixed(0)}% • {attempt.passed ? 'PASSED' : 'FAILED'}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        ) : (
+                            <div className="h-64 flex flex-col items-center justify-center text-muted-foreground bg-white rounded-3xl border-2 border-dashed border-slate-100">
+                                <Search className="w-12 h-12 mb-4 opacity-10" />
+                                <p className="font-medium text-lg">No results found</p>
+                                <p className="text-sm">Either no students have taken this quiz yet, or search returned no matches.</p>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            </DialogContent>
+        </Dialog>
+    );
+}
+
+function CourseEditorSkeleton() {
+    return (
+        <div className="p-4 lg:p-8 max-w-6xl mx-auto space-y-8">
+            {/* Header Skeleton */}
+            <div className="flex items-start justify-between">
+                <div className="space-y-3">
+                    <Skeleton className="h-10 w-96 rounded-xl" />
+                    <div className="flex gap-4">
+                        <Skeleton className="h-4 w-24" />
+                        <Skeleton className="h-4 w-24" />
+                        <Skeleton className="h-6 w-20 rounded-full" />
+                    </div>
+                </div>
+                <div className="flex gap-3">
+                    <Skeleton className="h-11 w-40 rounded-xl" />
+                    <Skeleton className="h-11 w-32 rounded-xl" />
+                </div>
+            </div>
+
+            {/* Tabs Skeleton */}
+            <div className="flex gap-8 border-b border-border pb-1">
+                <Skeleton className="h-10 w-40" />
+                <Skeleton className="h-10 w-40" />
+            </div>
+
+            <div className="grid lg:grid-cols-12 gap-8">
+                {/* Main Content Skeleton */}
+                <div className="lg:col-span-8 space-y-6">
+                    <Card className="rounded-3xl p-6 space-y-4">
+                        <Skeleton className="h-8 w-48" />
+                        <div className="space-y-4 pt-4">
+                            {[1, 2, 3].map(i => (
+                                <Skeleton key={i} className="h-16 w-full rounded-2xl" />
+                            ))}
+                        </div>
+                    </Card>
+                </div>
+
+                {/* Sidebar Skeleton */}
+                <div className="lg:col-span-4 space-y-6">
+                    <Card className="rounded-3xl p-6 space-y-6">
+                        <Skeleton className="h-6 w-32" />
+                        <Skeleton className="aspect-video w-full rounded-2xl" />
+                        <Skeleton className="h-14 w-full rounded-2xl" />
+                        <div className="pt-10 border-t">
+                            <Skeleton className="h-24 w-full rounded-3xl" />
+                        </div>
+                    </Card>
+                </div>
+            </div>
+        </div>
+    );
+}
+

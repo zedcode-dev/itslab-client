@@ -91,9 +91,28 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ options, onReady, onEn
             onReady && onReady(player);
         });
 
+        // Shared flag to prevent duplicate completion calls
+        let hasCalledOnEnded = false;
+        const triggerOnEnded = () => {
+            if (hasCalledOnEnded) return;
+            hasCalledOnEnded = true;
+            onEndedRef.current?.();
+        };
+
         // Event listener for video end
         player.on('ended', () => {
-            onEndedRef.current?.();
+            triggerOnEnded();
+        });
+
+        // Fallback: detect near-end for HLS streams that may not fire 'ended' reliably
+        player.on('timeupdate', () => {
+            if (hasCalledOnEnded) return;
+            const currentTime = player.currentTime();
+            const duration = player.duration();
+            // Trigger when within 1 second of end and duration is known
+            if (currentTime && duration && duration > 0 && currentTime >= duration - 1) {
+                triggerOnEnded();
+            }
         });
 
         // Cleanup on unmount

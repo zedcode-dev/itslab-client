@@ -1,5 +1,5 @@
 // ============================================================================
-// SRC/COMPONENTS/PROTECTED-ROUTE.TSX - Route Protection HOC
+// SRC/COMPONENTS/PROTECTED-ROUTE.TSX - Route Protection HOC (Fixed Hydration)
 // ============================================================================
 
 'use client';
@@ -14,10 +14,13 @@ interface ProtectedRouteProps {
 }
 
 export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) {
-  const { user, isAuthenticated } = useAuthStore();
+  const { user, isAuthenticated, _hasHydrated } = useAuthStore();
   const router = useRouter();
 
   useEffect(() => {
+    // Wait for hydration before making decisions
+    if (!_hasHydrated) return;
+
     if (!isAuthenticated) {
       router.push('/login');
       return;
@@ -26,7 +29,16 @@ export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) 
     if (allowedRoles && user && !allowedRoles.includes(user.role)) {
       router.push('/');
     }
-  }, [isAuthenticated, user, allowedRoles, router]);
+  }, [isAuthenticated, user, allowedRoles, router, _hasHydrated]);
+
+  // Show loading while hydrating
+  if (!_hasHydrated) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+      </div>
+    );
+  }
 
   if (!isAuthenticated) {
     return (

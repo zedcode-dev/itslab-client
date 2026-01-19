@@ -36,6 +36,7 @@ export default function CourseForm({ initialData, mode = 'create', rolePrefix }:
         level: initialData?.level || 'beginner',
         price: initialData?.price || 0,
         currency: initialData?.currency || 'EGP',
+        durationHours: initialData?.duration_hours || 0,
         requirements: initialData?.requirements
             ? (Array.isArray(initialData.requirements) ? initialData.requirements : JSON.parse(initialData.requirements))
             : [''],
@@ -119,6 +120,7 @@ export default function CourseForm({ initialData, mode = 'create', rolePrefix }:
         body.append('requirements', JSON.stringify(formData.requirements.filter((r: string) => r.trim())));
         body.append('learningOutcomes', JSON.stringify(formData.learningOutcomes.filter((o: string) => o.trim())));
         body.append('learning_outcomes', JSON.stringify(formData.learningOutcomes.filter((o: string) => o.trim()))); // Double mapping
+        body.append('duration_hours', formData.durationHours.toString());
 
         if (formData.thumbnail) {
             body.append('thumbnail', formData.thumbnail);
@@ -254,6 +256,16 @@ export default function CourseForm({ initialData, mode = 'create', rolePrefix }:
                                     ]}
                                 />
                             </div>
+
+                            <Input
+                                label="Estimated Duration (hours)"
+                                type="number"
+                                min="0"
+                                step="0.5"
+                                placeholder="e.g., 10"
+                                value={formData.durationHours}
+                                onChange={(e) => setFormData({ ...formData, durationHours: parseFloat(e.target.value) || 0 })}
+                            />
 
                             {/* Media Uploads */}
                             <div className="grid md:grid-cols-2 gap-6">

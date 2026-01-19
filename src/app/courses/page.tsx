@@ -80,12 +80,21 @@ export default function CoursesPage() {
 
         {/* Loading */}
         {isLoading && (
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
             {[...Array(6)].map((_, i) => (
-              <div key={i} className="animate-pulse">
-                <div className="aspect-video bg-muted rounded-lg mb-4"></div>
-                <div className="h-6 bg-muted rounded mb-2"></div>
-                <div className="h-4 bg-muted rounded w-3/4"></div>
+              <div key={i} className="animate-pulse space-y-4">
+                <div className="aspect-video bg-muted rounded-2xl relative overflow-hidden">
+                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/5 to-transparent animate-shimmer" />
+                </div>
+                <div className="space-y-3">
+                  <div className="h-4 bg-muted rounded-full w-1/4"></div>
+                  <div className="h-7 bg-muted rounded-xl w-full"></div>
+                  <div className="h-4 bg-muted rounded-full w-2/3"></div>
+                </div>
+                <div className="pt-4 flex items-center justify-between border-t border-muted">
+                  <div className="h-6 bg-muted rounded-lg w-20"></div>
+                  <div className="h-4 bg-muted rounded-lg w-16"></div>
+                </div>
               </div>
             ))}
           </div>

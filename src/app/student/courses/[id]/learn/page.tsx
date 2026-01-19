@@ -4,7 +4,7 @@ import { useState, useRef, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useCourse, useCourseCurriculum, useCourseProgress, useMarkLessonComplete, useSubmitReview } from '@/hooks/use-api';
 import { useAuthStore } from '@/store/auth-store';
-import { BACKEND_URL } from '@/lib/api-client';
+import apiClient, { BACKEND_URL } from '@/lib/api-client';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import {
@@ -33,6 +33,13 @@ import {
   ArrowRight,
   Menu,
   Star,
+  Lock,
+  ExternalLink,
+  HelpCircle,
+  AlertTriangle,
+  Loader2,
+  X,
+  Play,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
@@ -90,12 +97,13 @@ export default function LearningPage() {
     }
   }, [sections, currentLesson]);
 
-  // Handle API failure (e.g. Rate Limit)
+  // Handle API failure (e.g. Rate Limit or unauthorized)
   useEffect(() => {
     if (!sectionsLoading && !sections && courseId) {
-      // toast.error('Failed to load course content. Please try refreshing again later.');
+      toast.error('Failed to load course content. You may not be enrolled.');
+      router.push('/student/courses');
     }
-  }, [sections, sectionsLoading, courseId]);
+  }, [sections, sectionsLoading, courseId, router]);
 
   if (courseLoading || sectionsLoading || progressLoading) {
     return (
@@ -123,11 +131,43 @@ export default function LearningPage() {
 
   const handleMarkComplete = async () => {
     if (!currentLesson) return;
-    await markComplete.mutateAsync({
-      lessonId: currentLesson.id,
-      watchTimeSeconds: 0,
-    });
-    refetchProgress();
+
+    // Attempt to get actual watch time from playerRef
+    let watchTime = 0;
+    try {
+      if (currentLesson.lesson_type !== 'text' && playerRef.current) {
+        // Support both video.js (.currentTime()) and older players (.getCurrentTime())
+        const player = playerRef.current;
+        const time = typeof player.currentTime === 'function'
+          ? player.currentTime()
+          : typeof player.getCurrentTime === 'function'
+            ? player.getCurrentTime()
+            : 0;
+        watchTime = Math.floor(time || 0);
+      }
+    } catch (err) {
+      console.warn('Could not retrieve watch time:', err);
+    }
+
+    try {
+      console.log('Sending completion request for lesson:', currentLesson.id, 'Watch time:', watchTime);
+      const result = await markComplete.mutateAsync({
+        lessonId: currentLesson.id,
+        watchTimeSeconds: watchTime,
+      });
+      console.log('Completion request successful:', result);
+
+      // Force immediate refetch
+      const res = await refetchProgress();
+      console.log('Progress refetch result:', res);
+
+      if (result.success) {
+        toast.success('Lesson completed!');
+      }
+    } catch (error) {
+      console.error('Failed to mark lesson complete:', error);
+      toast.error('Failed to save progress. Please try again.');
+    }
   };
 
   const navigateLesson = (direction: 'next' | 'prev') => {
@@ -149,7 +189,7 @@ export default function LearningPage() {
       toast.error('Please select a rating');
       return;
     }
-    await submitReview.mutateAsync({ rating, reviewText });
+    await submitReview.mutateAsync({ rating, review_text: reviewText });
     setIsReviewModalOpen(false);
     setReviewText('');
     setRating(5);
@@ -201,17 +241,34 @@ export default function LearningPage() {
                   {section.lessons?.map((lesson: any, idx: number) => {
                     const active = currentLesson?.id === lesson.id;
                     const completed = isLessonCompleted(lesson.id);
+
+                    // Locking logic: Any lesson after an uncompleted quiz is locked
+                    const allLessons = sections.flatMap((s: any) => s.lessons);
+                    const lessonIndex = allLessons.findIndex((l: any) => l.id === lesson.id);
+                    let isLocked = false;
+
+                    for (let i = 0; i < lessonIndex; i++) {
+                      if (!isLessonCompleted(allLessons[i].id)) {
+                        isLocked = true;
+                        break;
+                      }
+                    }
+
                     return (
                       <button
                         key={lesson.id}
-                        onClick={() => setCurrentLesson(lesson)}
+                        disabled={isLocked && !active}
+                        onClick={() => !isLocked && setCurrentLesson(lesson)}
                         className={cn(
                           "w-full px-4 py-3.5 flex items-start gap-3 transition-all border-l-4",
-                          active ? "bg-primary/5 border-primary" : "border-transparent hover:bg-muted/50"
+                          active ? "bg-primary/5 border-primary" : "border-transparent hover:bg-muted/50",
+                          isLocked && "opacity-50 cursor-not-allowed"
                         )}
                       >
                         <div className="mt-1">
-                          {completed ? (
+                          {isLocked ? (
+                            <Lock className="w-4 h-4 text-muted-foreground/50" />
+                          ) : completed ? (
                             <CheckCircle className="w-4 h-4 text-green-600" />
                           ) : (
                             <Circle className="w-4 h-4 text-muted-foreground/30" />
@@ -222,7 +279,12 @@ export default function LearningPage() {
                             {idx + 1}. {lesson.title}
                           </div>
                           <div className="text-[11px] text-muted-foreground mt-1.5 flex items-center gap-1">
-                            {lesson.lesson_type === 'text' ? (
+                            {lesson.lesson_type === 'quiz' ? (
+                              <>
+                                <HelpCircle className="w-3 h-3" />
+                                <span>MCQ Quiz</span>
+                              </>
+                            ) : lesson.lesson_type === 'text' ? (
                               <>
                                 <Menu className="w-3 h-3" />
                                 <span>Text Lesson</span>
@@ -277,25 +339,37 @@ export default function LearningPage() {
 
         {/* Scrollable Container for Video + Info */}
         <div className="flex-1 overflow-y-auto custom-scrollbar flex flex-col">
-          {/* Video Area (Chic Wrapped with Margins) */}
+          {/* Video/Content Area */}
           <div className="flex-shrink-0 px-4 pt-4 lg:px-10 lg:pt-8 w-full">
-            <div className="max-w-6xl mx-auto backdrop-blur-3xl bg-card/50 rounded-3xl p-3 shadow-2xl border border-white/10">
-              <div className="aspect-video relative overflow-hidden rounded-2xl select-none bg-black">
+            <div className={cn(
+              "max-w-6xl mx-auto",
+              currentLesson?.lesson_type === 'text' ? "" : "backdrop-blur-3xl bg-card/50 rounded-3xl p-3 shadow-2xl border border-white/10"
+            )}>
+              <div className={cn(
+                "relative overflow-hidden select-none",
+                currentLesson?.lesson_type === 'video' ? "aspect-video bg-black rounded-2xl" :
+                  currentLesson?.lesson_type === 'text' ? "" : "min-h-fit rounded-2xl"
+              )}>
                 {/* Protective Transparent Overlay */}
                 <div className="absolute inset-0 z-10 pointer-events-none"
                   onContextMenu={(e) => e.preventDefault()}
                 />
 
-                {/* Dynamic Watermark */}
-                {user && (
-                  <div className="absolute top-4 right-4 z-20 pointer-events-none opacity-20 text-[10px] md:text-sm font-mono text-white/50 bg-black/20 p-1 rounded select-none">
-                    {user.name} - {user.email}
-                  </div>
-                )}
+                {/* Dynamic Watermark Removed per User Request */}
 
-                {currentLesson?.lesson_type === 'text' ? (
-                  <div className="absolute inset-0 bg-white overflow-y-auto p-6 md:p-10 custom-scrollbar select-text selection:bg-primary/20">
-                    <div className="max-w-3xl mx-auto space-y-6">
+                {currentLesson?.lesson_type === 'quiz' ? (
+                  <div className="min-h-[500px] overflow-y-auto p-4 md:p-8 custom-scrollbar bg-slate-50 rounded-2xl">
+                    <QuizRenderer
+                      lessonId={currentLesson.id}
+                      onSuccess={() => {
+                        refetchProgress();
+                      }}
+                      isCompleted={isLessonCompleted(currentLesson.id)}
+                    />
+                  </div>
+                ) : currentLesson?.lesson_type === 'text' ? (
+                  <div className="bg-white overflow-y-auto p-6 md:p-10 custom-scrollbar select-text selection:bg-primary/20">
+                    <div className="max-w-3xl space-y-6">
                       <div className="prose prose-slate max-w-none">
                         {currentLesson.content?.split('\n').map((line: string, i: number) => (
                           <p key={i} className="text-slate-700 leading-relaxed mb-4 text-base md:text-lg">
@@ -320,7 +394,11 @@ export default function LearningPage() {
                 ) : currentLesson?.id ? (
                   <VideoPlayer
                     key={currentLesson.id}
+                    onReady={(player) => {
+                      playerRef.current = player;
+                    }}
                     onEnded={() => {
+                      console.log('Video ended, marking complete...');
                       if (!isLessonCompleted(currentLesson.id)) {
                         handleMarkComplete();
                       }
@@ -369,33 +447,40 @@ export default function LearningPage() {
               </div>
 
               <div className="flex items-center gap-3 shrink-0 pt-2">
-                <Button
-                  variant="outline"
-                  onClick={() => navigateLesson('prev')}
-                  disabled={!currentLesson}
-                  className="rounded-xl h-11 px-6 font-bold"
-                >
-                  Previous
-                </Button>
-
-                {/*currentLesson?.lesson_type === 'video' && !isLessonCompleted(currentLesson?.id) && (
+                <div className="flex items-center gap-4">
                   <Button
-                    onClick={handleMarkComplete}
-                    loading={markComplete.isPending}
-                    variant="outline"
-                    className="rounded-xl h-11 px-6 font-bold border-dashed border-primary/40 text-primary hover:bg-primary/5"
+                    onClick={() => navigateLesson('prev')}
+                    disabled={!currentLesson}
+                    variant="ghost"
+                    className="rounded-xl h-14 px-6 font-bold uppercase tracking-widest gap-2 bg-white ring-1 ring-primary/10 shadow-sm"
                   >
-                    Complete Manually
+                    <ArrowLeft className="w-5 h-5" />
+                    Back
                   </Button>
-                )*/}
 
-                <Button
-                  onClick={() => navigateLesson('next')}
-                  variant="primary"
-                  className="rounded-xl h-11 px-8 font-black shadow-lg shadow-primary/10"
-                >
-                  Next Lesson <ArrowRight className="w-4 h-4 ml-2" />
-                </Button>
+                  <Button
+                    onClick={() => navigateLesson('next')}
+                    disabled={
+                      (currentLesson?.lesson_type === 'quiz' || currentLesson?.lesson_type === 'final_exam') &&
+                      !isLessonCompleted(currentLesson.id)
+                    }
+                    variant="ghost"
+                    className="rounded-xl h-14 px-6 font-bold uppercase tracking-widest gap-2 bg-white ring-1 ring-primary/10 shadow-sm"
+                  >
+                    Next Lesson
+                    <ArrowRight className="w-5 h-5" />
+                  </Button>
+
+                  {progressData?.enrollment?.completed && (
+                    <Button
+                      onClick={() => router.push(`/student/courses/${courseId}/certificate`)}
+                      className="rounded-xl h-14 px-8 font-black uppercase tracking-widest gap-2 bg-green-600 hover:bg-green-700 text-white shadow-lg shadow-green-200"
+                    >
+                      Claim Certificate
+                      <Star className="w-5 h-5 fill-white" />
+                    </Button>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -545,6 +630,364 @@ export default function LearningPage() {
         .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.05); border-radius: 10px; transition: all 0.2s; }
         .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,0.1); }
       `}</style>
+    </div>
+  );
+}
+
+// ============================================================================
+// Internal Quiz Renderer Component
+// ============================================================================
+
+import { motion, AnimatePresence } from 'framer-motion';
+
+function QuizRenderer({ lessonId, onSuccess, isCompleted }: { lessonId: string, onSuccess: () => void, isCompleted: boolean }) {
+  const [quiz, setQuiz] = useState<any>(null);
+  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
+  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [result, setResult] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [direction, setDirection] = useState(1); // 1 for next, -1 for back
+  const [showIntro, setShowIntro] = useState(true);
+
+  useEffect(() => {
+    const fetchQuiz = async () => {
+      try {
+        setLoading(true);
+        const res = await apiClient.get(`/courses/lesson/${lessonId}/quiz`);
+        if (res.data.success) {
+          setQuiz(res.data.data);
+        }
+      } catch (err) {
+        console.error('Failed to fetch quiz:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchQuiz();
+  }, [lessonId]);
+
+  const handleAnswerSelect = (questionId: string, optionId: string) => {
+    setAnswers({ ...answers, [questionId]: optionId });
+  };
+
+  const handleNext = () => {
+    if (!answers[quiz.questions[currentQuestionIndex].id]) {
+      toast.error('Please select an answer');
+      return;
+    }
+    setDirection(1);
+    if (currentQuestionIndex < quiz.questions.length - 1) {
+      setCurrentQuestionIndex(prev => prev + 1);
+    } else {
+      handleSubmit();
+    }
+  };
+
+  const handleBack = () => {
+    setDirection(-1);
+    if (currentQuestionIndex > 0) {
+      setCurrentQuestionIndex(prev => prev - 1);
+    }
+  };
+
+  const handleSubmit = async () => {
+    try {
+      setSubmitting(true);
+      const res = await apiClient.post(`/courses/lesson/${lessonId}/quiz/submit`, { answers });
+      if (res.data.success) {
+        setResult(res.data.data);
+        if (res.data.data.passed) {
+          toast.success('Congratulations! You passed the quiz!');
+          onSuccess();
+        } else {
+          toast.error('You did not pass. Try again!');
+        }
+      }
+    } catch (err) {
+      toast.error('Submission failed. Please try again.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (loading) return (
+    <div className="p-20 flex flex-col items-center justify-center gap-4">
+      <Loader2 className="w-12 h-12 animate-spin text-primary opacity-20" />
+      <p className="text-muted-foreground animate-pulse font-medium">Preparing your quiz...</p>
+    </div>
+  );
+
+  if (!quiz || !quiz.questions?.length) return (
+    <div className="p-16 text-center bg-muted/30 rounded-3xl border-2 border-dashed border-muted">
+      <HelpCircle className="w-12 h-12 mx-auto mb-4 text-muted-foreground opacity-20" />
+      <p className="text-lg font-bold">No questions found</p>
+      <p className="text-muted-foreground">The instructor hasn't added questions to this quiz yet.</p>
+    </div>
+  );
+
+  // If quiz already completed, show completion message (prevent retake)
+  if (isCompleted) {
+    const score = quiz?.lastPassingAttempt?.score;
+    return (
+      <motion.div
+        initial={{ opacity: 0, scale: 0.98 }}
+        animate={{ opacity: 1, scale: 1 }}
+        className="max-w-xl mx-auto py-12"
+      >
+        <div className="bg-white rounded-3xl p-10 shadow-sm border border-slate-100 text-center space-y-6">
+          <div className="w-24 h-24 rounded-3xl mx-auto flex items-center justify-center bg-green-500 text-white shadow-lg">
+            <CheckCircle className="w-12 h-12" />
+          </div>
+          <div>
+            <h2 className="text-3xl font-black tracking-tight text-slate-900">Quiz Completed!</h2>
+            <p className="text-slate-500 mt-3 text-lg">
+              You have already passed this quiz. Great work!
+            </p>
+          </div>
+          {score !== undefined && score !== null && (
+            <div className="p-6 bg-green-50 rounded-2xl border border-green-100">
+              <div className="text-4xl font-black text-green-600">{score.toFixed(0)}%</div>
+              <div className="text-xs uppercase font-bold tracking-widest text-green-500 mt-1">Your Score</div>
+            </div>
+          )}
+          <div className="pt-4">
+            <Badge variant="secondary" className="bg-green-100 text-green-700 px-4 py-2 text-sm font-bold">
+              <CheckCircle className="w-4 h-4 mr-2" /> Passed
+            </Badge>
+          </div>
+        </div>
+      </motion.div>
+    );
+  }
+
+  if (showIntro && !result) {
+    return (
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="max-w-2xl mx-auto"
+      >
+        <div className="bg-white rounded-[2rem] p-8 md:p-12 border border-slate-100 shadow-xl shadow-slate-200/50 text-center space-y-8">
+          <div className="w-20 h-20 bg-indigo-50 rounded-3xl mx-auto flex items-center justify-center text-indigo-600">
+            <HelpCircle className="w-10 h-10" />
+          </div>
+
+          <div className="space-y-3">
+            <h2 className="text-3xl font-black tracking-tight text-slate-900">Module Knowledge Check</h2>
+            <p className="text-slate-500 text-lg leading-relaxed">
+              Test your understanding of the concepts covered in this module.
+              You'll need a score of <span className="text-indigo-600 font-bold">{quiz.passing_score || 70}%</span> or higher to pass.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="p-6 bg-slate-50 rounded-3xl border border-slate-100">
+              <div className="text-2xl font-black text-slate-900">{quiz.questions.length}</div>
+              <div className="text-[10px] uppercase font-bold tracking-widest text-slate-400 mt-1">Total Questions</div>
+            </div>
+            <div className="p-6 bg-slate-50 rounded-3xl border border-slate-100">
+              <div className="text-2xl font-black text-slate-900">{quiz.passing_score || 70}%</div>
+              <div className="text-[10px] uppercase font-bold tracking-widest text-slate-400 mt-1">Passing Score</div>
+            </div>
+          </div>
+
+          <div className="pt-4">
+            <Button
+              onClick={() => setShowIntro(false)}
+              className="w-full h-16 rounded-2xl font-black text-xl bg-indigo-600 hover:bg-indigo-700 shadow-xl shadow-indigo-100 gap-3 group"
+            >
+              Start Quiz <ArrowRight className="w-6 h-6 group-hover:translate-x-1 transition-transform" />
+            </Button>
+            <p className="mt-4 text-xs text-slate-400 font-medium italic">You can retake this quiz as many times as you need.</p>
+          </div>
+        </div>
+      </motion.div>
+    );
+  }
+
+  if (result) {
+    return (
+      <motion.div
+        initial={{ opacity: 0, scale: 0.98 }}
+        animate={{ opacity: 1, scale: 1 }}
+        className="max-w-xl mx-auto"
+      >
+        <div className="bg-white rounded-3xl p-10 shadow-sm border border-slate-100 text-center space-y-8 overflow-hidden relative">
+          {/* Decorative background elements */}
+          <div className={cn("absolute top-0 right-0 w-32 h-32 blur-3xl rounded-full opacity-20", result.passed ? "bg-green-400" : "bg-red-400")} />
+          <div className={cn("absolute bottom-0 left-0 w-32 h-32 blur-3xl rounded-full opacity-20", result.passed ? "bg-blue-400" : "bg-purple-400")} />
+
+          <div className={cn(
+            "w-24 h-24 rounded-3xl mx-auto flex items-center justify-center rotate-12 shadow-lg",
+            result.passed ? "bg-green-500 text-white" : "bg-red-500 text-white"
+          )}>
+            {result.passed ? <CheckCircle className="w-12 h-12 -rotate-12" /> : <AlertTriangle className="w-12 h-12 -rotate-12" />}
+          </div>
+
+          <div className="relative z-10">
+            <h2 className="text-4xl font-black tracking-tight">{result.passed ? 'Excellent Work!' : 'Almost There!'}</h2>
+            <p className="text-muted-foreground mt-3 text-lg">
+              {result.passed
+                ? "You've successfully mastered this module's objectives."
+                : "Don't worry, every mistake is a learning opportunity."}
+            </p>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4 py-4">
+            <div className="p-6 bg-muted/30 rounded-3xl">
+              <div className="text-3xl font-black text-primary">{result.score.toFixed(0)}%</div>
+              <div className="text-xs uppercase font-bold tracking-widest text-muted-foreground mt-1">Your Score</div>
+            </div>
+            <div className="p-6 bg-muted/30 rounded-3xl">
+              <div className="text-3xl font-black text-foreground">{result.passingScale}%</div>
+              <div className="text-xs uppercase font-bold tracking-widest text-muted-foreground mt-1">Pass Mark</div>
+            </div>
+          </div>
+
+          <div className="space-y-3 pt-4">
+            {!result.passed && (
+              <Button
+                onClick={() => {
+                  setResult(null);
+                  setCurrentQuestionIndex(0);
+                  setAnswers({});
+                }}
+                className="w-full h-14 rounded-2xl font-black text-lg bg-red-600 hover:bg-red-700 shadow-xl shadow-red-200"
+              >
+                Retry Quiz
+              </Button>
+            )}
+            {result.passed && (
+              <div className="bg-green-50 p-4 rounded-2xl border border-green-100">
+                <p className="text-green-700 font-bold text-sm">Unit completed! You can now continue your journey.</p>
+              </div>
+            )}
+          </div>
+        </div>
+      </motion.div>
+    );
+  }
+
+  const currentQ = quiz.questions[currentQuestionIndex];
+  const progress = ((currentQuestionIndex) / quiz.questions.length) * 100;
+
+  return (
+    <div className="max-w-3xl mx-auto">
+      {/* Header with detailed progress */}
+      <div className="mb-10 text-center space-y-4">
+        <div className="inline-flex items-center gap-2 px-4 py-1.5 bg-primary/10 text-primary rounded-full text-xs font-black uppercase tracking-wider">
+          <HelpCircle className="w-3.5 h-3.5" />
+          Knowledge Check
+        </div>
+        <h2 className="text-3xl font-black tracking-tighter">Unit Practice Quiz</h2>
+        <div className="max-w-md mx-auto space-y-2">
+          <div className="flex justify-between text-[10px] font-black uppercase tracking-widest text-muted-foreground">
+            <span>{currentQuestionIndex + 1} of {quiz.questions.length} Questions</span>
+            <span>{Math.round(progress)}% Complete</span>
+          </div>
+          <div className="h-3 bg-muted rounded-full overflow-hidden p-0.5 border border-muted-foreground/5">
+            <motion.div
+              initial={{ width: 0 }}
+              animate={{ width: `${progress}%` }}
+              className="h-full bg-gradient-to-r from-blue-600 to-indigo-600 rounded-full shadow-[0_0_10px_rgba(37,99,235,0.4)]"
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Animated Question Card */}
+      <div className="relative min-h-[400px]">
+        <AnimatePresence mode="wait" custom={direction}>
+          <motion.div
+            key={currentQuestionIndex}
+            custom={direction}
+            initial={{ opacity: 0, x: 50 * direction, scale: 0.98 }}
+            animate={{ opacity: 1, x: 0, scale: 1 }}
+            exit={{ opacity: 0, x: -50 * direction, scale: 0.98 }}
+            transition={{ type: "spring", damping: 25, stiffness: 200 }}
+            className="w-full"
+          >
+            <div className="bg-white rounded-3xl p-8 md:p-12 border border-slate-100 flex flex-col gap-8 shadow-sm">
+              <div className="space-y-6">
+                <div className="inline-block p-4 rounded-3xl bg-slate-50 text-slate-400 font-black text-xl leading-none">
+                  {String(currentQuestionIndex + 1).padStart(2, '0')}
+                </div>
+                <h3 className="text-2xl md:text-3xl font-bold text-slate-900 leading-tight tracking-tight">
+                  {currentQ.question_text}
+                </h3>
+              </div>
+
+              <div className="grid gap-4">
+                {currentQ.options.map((opt: any, idx: number) => {
+                  const isSelected = answers[currentQ.id] === opt.id;
+                  const label = String.fromCharCode(65 + idx); // A, B, C, D
+
+                  return (
+                    <motion.button
+                      key={opt.id}
+                      whileHover={{ scale: 1.01 }}
+                      whileTap={{ scale: 0.99 }}
+                      onClick={() => handleAnswerSelect(currentQ.id, opt.id)}
+                      className={cn(
+                        "group flex items-center gap-5 p-5 md:p-6 rounded-[1.5rem] border-2 transition-all text-left relative overflow-hidden",
+                        isSelected
+                          ? "border-primary bg-primary/5 shadow-lg shadow-primary/5 ring-4 ring-primary/5"
+                          : "border-slate-100 hover:border-slate-200 hover:bg-slate-50"
+                      )}
+                    >
+                      <div className={cn(
+                        "w-10 h-10 rounded-2xl flex items-center justify-center font-black transition-colors shrink-0",
+                        isSelected ? "bg-primary text-white" : "bg-slate-100 text-slate-400 group-hover:bg-slate-200"
+                      )}>
+                        {label}
+                      </div>
+                      <span className={cn(
+                        "font-semibold text-lg flex-1",
+                        isSelected ? "text-primary" : "text-slate-700"
+                      )}>
+                        {opt.option_text}
+                      </span>
+                      {isSelected && (
+                        <motion.div
+                          layoutId="activeIndicator"
+                          className="w-2 h-10 bg-primary absolute left-0 rounded-r-full"
+                        />
+                      )}
+                    </motion.button>
+                  );
+                })}
+              </div>
+            </div>
+          </motion.div>
+        </AnimatePresence>
+      </div>
+
+      {/* Navigation Footer */}
+      <div className="mt-10 flex items-center justify-between gap-4">
+        <Button
+          variant="ghost"
+          onClick={handleBack}
+          disabled={currentQuestionIndex === 0}
+          className="h-14 px-8 rounded-2xl font-black text-slate-500 hover:text-primary transition-colors flex gap-2 disabled:opacity-0"
+        >
+          <X className="w-5 h-5 rotate-45" /> Back
+        </Button>
+
+        <Button
+          onClick={handleNext}
+          loading={submitting}
+          className={cn(
+            "h-14 px-12 rounded-2xl font-black text-lg gap-2 shadow-2xl transition-all",
+            currentQuestionIndex === quiz.questions.length - 1
+              ? "bg-green-600 hover:bg-green-700 shadow-green-200"
+              : "bg-primary shadow-primary/20"
+          )}
+        >
+          {currentQuestionIndex === quiz.questions.length - 1 ? 'Finish Quiz' : 'Continue'}
+          <Play className="w-5 h-5 ml-1" />
+        </Button>
+      </div>
     </div>
   );
 }

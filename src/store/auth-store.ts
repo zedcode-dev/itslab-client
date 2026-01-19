@@ -12,6 +12,7 @@ interface User {
   email: string;
   role: 'student' | 'instructor' | 'admin';
   emailVerified: boolean;
+  is_verified?: boolean;
   profilePicture?: string;
   bio?: string;
 }
@@ -35,8 +36,15 @@ export const useAuthStore = create<AuthState>()(
       setUser: (user) => set({ user, isAuthenticated: !!user }),
       setHasHydrated: (state) => set({ _hasHydrated: state }),
       login: (user, token, refreshToken) => {
-        Cookies.set('accessToken', token, { expires: 7 });
-        Cookies.set('refreshToken', refreshToken, { expires: 30 });
+        const isSecure = typeof window !== 'undefined' && window.location.protocol === 'https:';
+        const cookieOptions = {
+          expires: 7,
+          secure: isSecure,
+          sameSite: 'lax' as const,
+          path: '/',
+        };
+        Cookies.set('accessToken', token, cookieOptions);
+        Cookies.set('refreshToken', refreshToken, { ...cookieOptions, expires: 30 });
         set({ user, isAuthenticated: true });
       },
       logout: () => {

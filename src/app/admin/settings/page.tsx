@@ -1,215 +1,236 @@
-// ============================================================================
-// SRC/APP/ADMIN/SETTINGS/PAGE.TSX - Super Admin Control Center
-// ============================================================================
-
 'use client';
 
-import { useState, useEffect } from 'react';
-import { useAuthStore } from '@/store/auth-store';
+import React, { useState, useEffect } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import apiClient from '@/lib/api-client';
-import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import { Badge } from '@/components/ui/badge';
-
 import {
-    ShieldAlert,
-    Settings,
+    Loader2,
     Save,
-    Globe,
-    UserPlus,
-    AlertTriangle,
-    Info,
+    Settings,
+    ShieldAlert,
     CreditCard,
-    Lock
+    Mail,
+    Globe,
+    Bell
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { cn } from '@/lib/utils';
 
-export default function SuperAdminSettingsPage() {
-    const [loading, setLoading] = useState(true);
-    const [saving, setSaving] = useState(false);
-    const [settings, setSettings] = useState<any>({});
+export default function SettingsPage() {
+    const queryClient = useQueryClient();
+    const [formSettings, setFormSettings] = useState<any>({});
+
+    const { data, isLoading } = useQuery({
+        queryKey: ['admin-settings'],
+        queryFn: async () => {
+            const res = await apiClient.get('/admin/settings');
+            return res.data.data.settings;
+        }
+    });
 
     useEffect(() => {
-        fetchSettings();
-    }, []);
-
-    const fetchSettings = async () => {
-        try {
-            const { data } = await apiClient.get('/system');
-            const settingsMap: any = {};
-            data.data.settings.forEach((s: any) => {
-                settingsMap[s.key] = s.value;
-            });
-            setSettings(settingsMap);
-        } catch (error) {
-            toast.error('Failed to load system settings');
-        } finally {
-            setLoading(false);
+        if (data) {
+            const settingsMap = data.reduce((acc: any, s: any) => {
+                acc[s.key] = s.value;
+                return acc;
+            }, {});
+            setFormSettings(settingsMap);
         }
+    }, [data]);
+
+    const updateSettingsMutation = useMutation({
+        mutationFn: async (settings: any) => {
+            return apiClient.put('/admin/settings', { settings });
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['admin-settings'] });
+            toast.success('System settings committed successfully');
+        },
+        onError: () => {
+            toast.error('Failed to update system settings');
+        }
+    });
+
+    const handleToggle = (key: string, value: boolean) => {
+        setFormSettings({ ...formSettings, [key]: value });
     };
 
-    const handleUpdate = async (updatedSettings: any) => {
-        if (saving) return;
-        setSaving(true);
-        try {
-            await apiClient.put('/system', { settings: updatedSettings });
-            setSettings({ ...settings, ...updatedSettings });
-            toast.success('System settings updated successfully');
-        } catch (error) {
-            toast.error('Failed to update settings');
-        } finally {
-            setSaving(false);
-        }
+    const handleInputChange = (key: string, value: string) => {
+        setFormSettings({ ...formSettings, [key]: value });
     };
 
-    if (loading) return <div className="p-8">Loading System Authority...</div>;
+    const handleSave = () => {
+        updateSettingsMutation.mutate(formSettings);
+    };
+
+    if (isLoading) {
+        return (
+            <div className="flex items-center justify-center min-h-[400px]">
+                <Loader2 className="w-10 h-10 animate-spin text-primary" />
+            </div>
+        );
+    }
 
     return (
-        <div className="p-4 lg:p-8 max-w-6xl mx-auto space-y-8 pb-20">
-            <div className="flex items-center justify-between gap-4 border-b pb-6">
+        <div className="p-6 max-w-5xl mx-auto space-y-8">
+            <div className="flex items-center justify-between">
                 <div>
-                    <h1 className="text-3xl font-black tracking-tight flex items-center gap-3">
-                        <ShieldAlert className="w-8 h-8 text-red-600" />
-                        System Settings
-                    </h1>
-                    <p className="text-muted-foreground mt-1 font-medium">Manage global platform behavior and critical system states</p>
+                    <h1 className="text-3xl font-bold tracking-tight">System Control</h1>
+                    <p className="text-muted-foreground mt-1">
+                        Global configuration for platform behavior and security.
+                    </p>
                 </div>
-                <div className="hidden md:block">
-                    <Badge className="bg-red-100 text-red-700 border-red-200 border px-4 py-2 rounded-xl text-xs font-bold">
-                        ROOT ACCESS ACTIVE
-                    </Badge>
-                </div>
+                <Button
+                    onClick={handleSave}
+                    loading={updateSettingsMutation.isPending}
+                    className="rounded-2xl h-12 px-8 font-black gap-2 shadow-xl shadow-primary/20"
+                >
+                    <Save className="w-5 h-5" /> Deploy Settings
+                </Button>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                {/* Maintenance Mode */}
-                <Card className="border-red-500/20 shadow-xl shadow-red-50">
-                    <CardHeader className="bg-red-50/50">
-                        <div className="flex items-center justify-between">
-                            <div className="space-y-1">
-                                <CardTitle className="text-xl flex items-center gap-2 text-red-700">
-                                    <AlertTriangle className="w-5 h-5" />
-                                    Maintenance Mode
-                                </CardTitle>
-                                <CardDescription>Block all non-admin access instantly</CardDescription>
+            <div className="grid md:grid-cols-2 gap-6">
+                {/* Critical Systems */}
+                <Card className="rounded-3xl border-2 shadow-lg shadow-red-50/50">
+                    <CardHeader className="bg-red-50/30 border-b">
+                        <CardTitle className="text-lg font-bold flex items-center gap-2 text-red-900">
+                            <ShieldAlert className="w-5 h-5 text-red-600" />
+                            Critical Operations
+                        </CardTitle>
+                        <CardDescription>High-impact platform toggles</CardDescription>
+                    </CardHeader>
+                    <CardContent className="p-6 space-y-6">
+                        <div className="flex items-center justify-between p-4 bg-muted/20 rounded-2xl border-2 border-dashed">
+                            <div className="space-y-0.5">
+                                <Label className="text-base font-bold">Maintenance Mode</Label>
+                                <p className="text-xs text-muted-foreground">Block non-admin users immediately.</p>
                             </div>
                             <Switch
-                                checked={settings.maintenance_mode}
-                                onCheckedChange={(val: boolean) => handleUpdate({ maintenance_mode: val })}
+                                checked={formSettings.maintenance_mode === 'true' || formSettings.maintenance_mode === true}
+                                onCheckedChange={(val) => handleToggle('maintenance_mode', val)}
                             />
                         </div>
-                    </CardHeader>
-                    <CardContent className="pt-6 space-y-4">
-                        <div className="space-y-2">
-                            <Label className="font-bold">Maintenance Message</Label>
-                            <Textarea
-                                value={settings.maintenance_message}
-                                onChange={(e) => setSettings({ ...settings, maintenance_message: e.target.value })}
-                                placeholder="Message shown to blocked users..."
-                                className="min-h-[100px] bg-red-50/20 border-red-100"
+
+                        <Input
+                            label="Maintenance Message"
+                            placeholder="We'll be back in 2 hours..."
+                            value={formSettings.maintenance_message || ''}
+                            onChange={(e) => handleInputChange('maintenance_message', e.target.value)}
+                            className="rounded-xl h-12"
+                        />
+
+                        <div className="flex items-center justify-between">
+                            <div className="space-y-0.5">
+                                <Label className="text-sm font-bold">Instructor Onboarding</Label>
+                                <p className="text-[10px] text-muted-foreground">Allow new instructors to create accounts.</p>
+                            </div>
+                            <Switch
+                                checked={formSettings.instructor_registration_enabled === 'true' || formSettings.instructor_registration_enabled === true}
+                                onCheckedChange={(val) => handleToggle('instructor_registration_enabled', val)}
                             />
-                            <Button
-                                size="sm"
-                                variant="destructive"
-                                className="w-full"
-                                onClick={() => handleUpdate({ maintenance_message: settings.maintenance_message })}
-                                disabled={saving}
-                            >
-                                Update Message Only
-                            </Button>
                         </div>
-                        <p className="text-[10px] text-muted-foreground font-medium italic">
-                            * Note: Admins can still browse the sit for testing.
-                        </p>
                     </CardContent>
                 </Card>
 
-                {/* Access & Registration */}
-                <Card className="border-primary/20 shadow-xl shadow-primary/5">
-                    <CardHeader className="bg-primary/5">
-                        <CardTitle className="text-xl flex items-center gap-2">
-                            <UserPlus className="w-5 h-5 text-primary" />
-                            Enrollment & Access
+                {/* Payments & Revenue */}
+                <Card className="rounded-3xl border-2 shadow-sm">
+                    <CardHeader className="bg-muted/30 border-b">
+                        <CardTitle className="text-lg font-bold flex items-center gap-2">
+                            <CreditCard className="w-5 h-5 text-primary" />
+                            Financial Settings
                         </CardTitle>
-                        <CardDescription>Control how users join the platform</CardDescription>
+                        <CardDescription>Payment gateway and currency configuration</CardDescription>
                     </CardHeader>
-                    <CardContent className="pt-6 space-y-6">
-                        <div className="flex items-center justify-between p-4 rounded-xl border-2 border-dashed bg-muted/20">
+                    <CardContent className="p-6 space-y-6">
+                        <div className="flex items-center justify-between">
                             <div className="space-y-0.5">
-                                <Label className="text-base font-bold">Instructor Registration</Label>
-                                <p className="text-xs text-muted-foreground">Allow or block new instructor signups</p>
+                                <Label className="text-sm font-bold">Manual Payments</Label>
+                                <p className="text-[10px] text-muted-foreground">Vodafone Cash & InstaPay verification.</p>
                             </div>
                             <Switch
-                                checked={settings.instructor_registration_enabled}
-                                onCheckedChange={(val: boolean) => handleUpdate({ instructor_registration_enabled: val })}
+                                checked={formSettings.allow_manual_payment === 'true' || formSettings.allow_manual_payment === true}
+                                onCheckedChange={(val) => handleToggle('allow_manual_payment', val)}
                             />
                         </div>
 
-                        <div className="flex items-center justify-between p-4 rounded-xl border-2 border-dashed bg-muted/20">
-                            <div className="space-y-0.5">
-                                <Label className="text-base font-bold">Manual Payments</Label>
-                                <p className="text-xs text-muted-foreground">Enable Vodafone Cash / InstaPay</p>
-                            </div>
-                            <Switch
-                                checked={settings.allow_manual_payment}
-                                onCheckedChange={(val: boolean) => handleUpdate({ allow_manual_payment: val })}
+                        <div className="grid grid-cols-2 gap-4">
+                            <Input
+                                label="Currency Symbol"
+                                value={formSettings.site_currency || 'EGP'}
+                                onChange={(e) => handleInputChange('site_currency', e.target.value)}
+                                className="rounded-xl"
+                            />
+                            <Input
+                                label="Tax Percentage (%)"
+                                type="number"
+                                value={formSettings.default_tax || 0}
+                                onChange={(e) => handleInputChange('default_tax', e.target.value)}
+                                className="rounded-xl"
                             />
                         </div>
                     </CardContent>
                 </Card>
 
                 {/* Branding & SEO */}
-                <Card className="col-span-full border-none bg-muted/30 shadow-inner">
-                    <CardHeader>
-                        <CardTitle className="flex items-center gap-2">
-                            <Globe className="w-5 h-5" />
-                            Platform Branding & Identity
+                <Card className="rounded-3xl border-2 shadow-sm">
+                    <CardHeader className="bg-muted/30 border-b">
+                        <CardTitle className="text-lg font-bold flex items-center gap-2">
+                            <Globe className="w-5 h-5 text-primary" />
+                            General Branding
                         </CardTitle>
                     </CardHeader>
-                    <CardContent>
-                        <div className="grid md:grid-cols-2 gap-6 pb-6">
-                            <div className="space-y-2">
-                                <Label className="font-bold flex items-center gap-2">
-                                    <Info className="w-3.5 h-3.5" /> Platform Name
-                                </Label>
-                                <Input
-                                    value={settings.site_name}
-                                    onChange={(e) => setSettings({ ...settings, site_name: e.target.value })}
-                                    className="bg-background"
-                                />
+                    <CardContent className="p-6 space-y-4">
+                        <Input
+                            label="Site Name"
+                            value={formSettings.site_name || ''}
+                            onChange={(e) => handleInputChange('site_name', e.target.value)}
+                            className="rounded-xl h-12"
+                        />
+                        <Input
+                            label="Contact Email"
+                            value={formSettings.contact_email || ''}
+                            onChange={(e) => handleInputChange('contact_email', e.target.value)}
+                            className="rounded-xl h-12"
+                        />
+                    </CardContent>
+                </Card>
+
+                {/* Communications */}
+                <Card className="rounded-3xl border-2 shadow-sm">
+                    <CardHeader className="bg-muted/30 border-b">
+                        <CardTitle className="text-lg font-bold flex items-center gap-2">
+                            <Mail className="w-5 h-5 text-primary" />
+                            Communication
+                        </CardTitle>
+                    </CardHeader>
+                    <CardContent className="p-6 space-y-4">
+                        <div className="flex items-center justify-between">
+                            <div className="space-y-0.5">
+                                <Label className="text-sm font-bold">Welcome Emails</Label>
+                                <p className="text-[10px] text-muted-foreground">Send auto-welcome to new students.</p>
                             </div>
-                            <div className="space-y-2">
-                                <Label className="font-bold flex items-center gap-2">
-                                    <Lock className="w-3.5 h-3.5" /> Platform Meta Description
-                                </Label>
-                                <Textarea
-                                    value={settings.site_description}
-                                    onChange={(e) => setSettings({ ...settings, site_description: e.target.value })}
-                                    className="bg-background"
-                                />
-                            </div>
+                            <Switch
+                                checked={formSettings.send_welcome_emails === 'true' || formSettings.send_welcome_emails === true}
+                                onCheckedChange={(val) => handleToggle('send_welcome_emails', val)}
+                            />
                         </div>
-                        <Button
-                            className="w-full h-12 rounded-xl text-lg font-bold"
-                            onClick={() => handleUpdate({
-                                site_name: settings.site_name,
-                                site_description: settings.site_description
-                            })}
-                            disabled={saving}
-                        >
-                            <Save className="w-5 h-5" />
-                            Save Settings
-                        </Button>
+                        <div className="flex items-center justify-between">
+                            <div className="space-y-0.5">
+                                <Label className="text-sm font-bold">Admin Notifications</Label>
+                                <p className="text-[10px] text-muted-foreground">Alert admins on new course uploads.</p>
+                            </div>
+                            <Switch
+                                checked={formSettings.admin_notification_enabled === 'true' || formSettings.admin_notification_enabled === true}
+                                onCheckedChange={(val) => handleToggle('admin_notification_enabled', val)}
+                            />
+                        </div>
                     </CardContent>
                 </Card>
             </div>
         </div>
     );
 }
-
-

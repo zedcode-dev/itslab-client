@@ -25,14 +25,31 @@ export default function StudentDashboardPage() {
 
   if (isLoading) {
     return (
-      <div className="p-8 space-y-8 animate-pulse">
-        <div className="h-10 bg-muted rounded-lg w-1/4"></div>
+      <div className="p-8 space-y-10 max-w-7xl mx-auto animate-pulse">
+        {/* Header Skeleton */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+          <div className="space-y-3 w-1/3">
+            <div className="h-10 bg-muted rounded-xl w-3/4"></div>
+            <div className="h-4 bg-muted rounded-lg w-full"></div>
+          </div>
+          <div className="h-14 bg-muted rounded-xl w-48"></div>
+        </div>
+
+        {/* Stats Skeleton */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {[1, 2, 3].map((i) => (
-            <div key={i} className="h-32 bg-muted rounded-2xl"></div>
+            <div key={i} className="h-32 bg-muted rounded-[2rem]"></div>
           ))}
         </div>
-        <div className="h-64 bg-muted rounded-2xl"></div>
+
+        {/* Course Card Skeleton */}
+        <div className="space-y-6">
+          <div className="flex justify-between items-center">
+            <div className="h-8 bg-muted rounded-lg w-48"></div>
+            <div className="h-4 bg-muted rounded-lg w-24"></div>
+          </div>
+          <div className="h-72 bg-muted rounded-[2.5rem]"></div>
+        </div>
       </div>
     );
   }

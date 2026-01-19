@@ -29,6 +29,10 @@ import {
   GraduationCap,
   ArrowRight,
   ShieldCheck,
+  Share2,
+  Facebook,
+  Twitter,
+  Link as LinkIcon,
 } from 'lucide-react';
 import {
   Dialog,
@@ -490,6 +494,48 @@ export default function CourseDetailPage() {
                       <CheckCircle className="w-5 h-5 text-primary" />
                       <span>Full lifetime access</span>
                     </div>
+                  </div>
+                </div>
+
+                {/* Social Share Section */}
+                <div className="pt-6 border-t space-y-4">
+                  <h3 className="font-semibold text-sm">Share this course:</h3>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="rounded-xl hover:text-blue-600 hover:border-blue-600 transition-colors"
+                      onClick={() => window.open(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(window.location.href)}`, '_blank')}
+                    >
+                      <Facebook className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="rounded-xl hover:text-sky-500 hover:border-sky-500 transition-colors"
+                      onClick={() => window.open(`https://twitter.com/intent/tweet?url=${encodeURIComponent(window.location.href)}&text=${encodeURIComponent(`Check out this course: ${course.title}`)}`, '_blank')}
+                    >
+                      <Twitter className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="rounded-xl hover:text-green-600 hover:border-green-600 transition-colors"
+                      onClick={() => window.open(`https://wa.me/?text=${encodeURIComponent(`Check out this course: ${course.title} ${window.location.href}`)}`, '_blank')}
+                    >
+                      <Share2 className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="rounded-xl hover:text-primary hover:border-primary transition-colors"
+                      onClick={() => {
+                        navigator.clipboard.writeText(window.location.href);
+                        toast.success('Link copied to clipboard!');
+                      }}
+                    >
+                      <LinkIcon className="w-4 h-4" />
+                    </Button>
                   </div>
                 </div>
               </CardContent>

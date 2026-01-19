@@ -55,7 +55,7 @@ export default function CheckoutPage() {
                 router.push('/student/payments');
             }
         }
-    }, [isAuthenticated, router, courseId, course]);
+    }, [isAuthenticated, router, courseId, course, isSubmitting]);
 
     if (isLoading) {
         return <div className="min-h-screen flex items-center justify-center animate-pulse">Loading checkout...</div>;

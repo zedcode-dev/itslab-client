@@ -209,7 +209,7 @@ export function useSubmitReview(courseId: string) {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (reviewData: { rating: number; reviewText: string }) => {
+    mutationFn: async (reviewData: { rating: number; review_text: string }) => {
       const { data } = await apiClient.post(`/student/courses/${courseId}/reviews`, reviewData);
       return data;
     },
