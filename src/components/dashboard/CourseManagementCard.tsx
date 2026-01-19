@@ -18,7 +18,7 @@ export function CourseManagementCard({ course, role, onPublishToggle, isPublishi
     const manageHref = role === 'admin'
         ? `/admin/courses/${course.id}/edit`
         : `/instructor/courses/${course.id}/edit`;
-        
+
     return (
         <Card className="overflow-hidden group hover:shadow-lg transition-all duration-300 rounded-2xl border border-border/50 bg-card">
             <div className="aspect-video bg-muted relative overflow-hidden">

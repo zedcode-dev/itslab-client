@@ -444,7 +444,7 @@ export default function CourseDetailPage() {
                 {/* CTA Button */}
                 {/* CTA Button */}
                 {(() => {
-                  const isRestrictedRole = user && ['admin', 'instructor'].includes(user.role);
+                  const isRestrictedRole = !!(user && ['admin', 'instructor'].includes(user.role));
 
                   return (
                     <>

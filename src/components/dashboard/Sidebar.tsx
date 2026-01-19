@@ -6,6 +6,8 @@
 
 import { useAuthStore } from '@/store/auth-store';
 import { useRouter, usePathname } from 'next/navigation';
+import { useState, useEffect } from 'react';
+import { apiClient, BACKEND_URL } from '@/lib/api-client';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import {
@@ -24,7 +26,6 @@ import {
     CreditCard,
     Award
 } from 'lucide-react';
-import { BACKEND_URL } from '@/lib/api-client';
 import { cn } from '@/lib/utils';
 
 interface SidebarProps {
@@ -90,6 +91,26 @@ export default function Sidebar({ role, open, onClose }: SidebarProps) {
     const config = configs[role] || configs.student;
     const Icon = config.icon;
 
+    // State for pending transactions (Admin only)
+    const [pendingTransactions, setPendingTransactions] = useState(0);
+
+    useEffect(() => {
+        if (role === 'admin') {
+            const fetchPendingTransactions = async () => {
+                try {
+                    // Fetch only 1 item just to get the total count from pagination metadata
+                    const { data } = await apiClient.get('/admin/transactions?status=pending&limit=1');
+                    if (data?.data?.pagination?.totalRecords) {
+                        setPendingTransactions(data.data.pagination.totalRecords);
+                    }
+                } catch (error) {
+                    console.error('Failed to fetch pending transactions', error);
+                }
+            };
+            fetchPendingTransactions();
+        }
+    }, [role]);
+
     return (
         <aside
             className={cn(
@@ -128,7 +149,17 @@ export default function Sidebar({ role, open, onClose }: SidebarProps) {
                                 )}
                             >
                                 <item.icon className="w-5 h-5" />
-                                <span>{item.name}</span>
+                                <span className="flex-1">{item.name}</span>
+                                {item.name === 'Transactions' && pendingTransactions > 0 && (
+                                    <span className={cn(
+                                        "ml-2 text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center justify-center min-w-[20px]",
+                                        isActive
+                                            ? "bg-white text-red-600"
+                                            : "bg-red-600 text-white"
+                                    )}>
+                                        {pendingTransactions}
+                                    </span>
+                                )}
                             </Link>
                         );
                     })}
@@ -141,8 +172,8 @@ export default function Sidebar({ role, open, onClose }: SidebarProps) {
                             "w-10 h-10 rounded-full flex items-center justify-center overflow-hidden border",
                             role === 'admin' ? "bg-red-100 border-red-200" : "bg-primary/10 border-primary/10"
                         )}>
-                            {user?.profile_picture ? (
-                                <img src={`${BACKEND_URL}${user.profile_picture}`} alt="Profile" className="w-full h-full object-cover" />
+                            {user?.profilePicture ? (
+                                <img src={`${BACKEND_URL}${user.profilePicture}`} alt="Profile" className="w-full h-full object-cover" />
                             ) : (
                                 <Icon className={cn("w-5 h-5", role === 'admin' ? "text-red-600" : "text-primary")} />
                             )}
