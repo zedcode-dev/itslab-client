@@ -79,7 +79,9 @@ export default function DashboardLayout({ children, allowedRoles }: DashboardLay
 
     const role = user?.role as 'admin' | 'instructor' | 'student';
     const Icon = role === 'admin' ? Shield : GraduationCap;
-    const showVerificationBanner = user && !user.is_verified;
+    // Check both standard camelCase and potential snake_case from raw DB responses
+    const isVerified = user?.emailVerified || (user as any)?.email_verified;
+    const showVerificationBanner = user && !isVerified;
 
     return (
         <div className="min-h-screen bg-muted/30">

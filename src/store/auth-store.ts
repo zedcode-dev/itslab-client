@@ -12,7 +12,6 @@ interface User {
   email: string;
   role: 'student' | 'instructor' | 'admin';
   emailVerified: boolean;
-  is_verified?: boolean;
   profilePicture?: string;
   bio?: string;
 }

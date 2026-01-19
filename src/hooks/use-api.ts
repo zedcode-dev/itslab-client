@@ -200,7 +200,7 @@ export function useMarkLessonComplete() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['course-progress'] });
-      toast.success('Lesson marked as complete!');
+      // Toast is handled by the calling component
     },
   });
 }
