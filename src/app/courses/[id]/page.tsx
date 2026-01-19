@@ -442,23 +442,41 @@ export default function CourseDetailPage() {
                 </div>
 
                 {/* CTA Button */}
-                <Button
-                  onClick={() => course.is_enrolled ? router.push(`/student/courses/${course.id}/learn`) : handleEnroll()}
-                  disabled={enrolling || course.enrollment?.payment_status === 'pending'}
-                  loading={enrolling}
-                  className="w-full h-14 rounded-2xl font-black text-lg gap-2"
-                  size="lg"
-                >
-                  {course.is_enrolled ? 'Resume Learning' :
-                    course.enrollment?.payment_status === 'pending' ? (
-                      <>
-                        <Clock className="w-5 h-5" />
-                        Request Pending
-                      </>
-                    ) : (
-                      course.price > 0 ? 'Enroll Now' : 'Enroll for Free'
-                    )}
-                </Button>
+                {/* CTA Button */}
+                {(() => {
+                  const isRestrictedRole = user && ['admin', 'instructor'].includes(user.role);
+
+                  return (
+                    <>
+                      <Button
+                        onClick={() => course.is_enrolled ? router.push(`/student/courses/${course.id}/learn`) : handleEnroll()}
+                        disabled={enrolling || course.enrollment?.payment_status === 'pending' || isRestrictedRole}
+                        loading={enrolling}
+                        className="w-full h-14 rounded-2xl font-black text-lg gap-2 disabled:opacity-70"
+                        size="lg"
+                      >
+                        {course.is_enrolled ? 'Resume Learning' :
+                          course.enrollment?.payment_status === 'pending' ? (
+                            <>
+                              <Clock className="w-5 h-5" />
+                              Request Pending
+                            </>
+                          ) : isRestrictedRole ? (
+                            'Student Only'
+                          ) : (
+                            course.price > 0 ? 'Enroll Now' : 'Enroll for Free'
+                          )}
+                      </Button>
+
+                      {isRestrictedRole && (
+                        <div className="p-3 rounded-xl bg-slate-100 border border-slate-200 flex items-center justify-center gap-2 text-slate-600 text-sm font-medium text-center">
+                          <ShieldCheck className="w-4 h-4" />
+                          <span>Instructors & Admins cannot enroll</span>
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
 
                 {course.enrollment?.payment_status === 'pending' && (
                   <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 flex items-start gap-3">
